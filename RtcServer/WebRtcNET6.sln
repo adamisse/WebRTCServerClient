@@ -1,0 +1,37 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WebRtcNET6", "WebRtcNET6.csproj", "{100D987A-C990-4089-934B-E04DF7602839}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Signaler", "..\Signaler\Signaler.csproj", "{CE986F28-EC1D-4B5E-844B-A1E06F869EFF}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SIPSorcery", "..\sipsorcery\SIPSorcery.csproj", "{1CE41E7A-22A9-477E-A2B7-3079B4212F79}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{100D987A-C990-4089-934B-E04DF7602839}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{100D987A-C990-4089-934B-E04DF7602839}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{100D987A-C990-4089-934B-E04DF7602839}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{100D987A-C990-4089-934B-E04DF7602839}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CE986F28-EC1D-4B5E-844B-A1E06F869EFF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE986F28-EC1D-4B5E-844B-A1E06F869EFF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE986F28-EC1D-4B5E-844B-A1E06F869EFF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE986F28-EC1D-4B5E-844B-A1E06F869EFF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1CE41E7A-22A9-477E-A2B7-3079B4212F79}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1CE41E7A-22A9-477E-A2B7-3079B4212F79}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1CE41E7A-22A9-477E-A2B7-3079B4212F79}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1CE41E7A-22A9-477E-A2B7-3079B4212F79}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {DE768CE3-B612-4DA2-A3BA-02AE2693086D}
+	EndGlobalSection
+EndGlobal

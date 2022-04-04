@@ -27,18 +27,10 @@ namespace Signaler
         private readonly IHubContext<WebRTCHub> _webRTCHub;
         private readonly ILogger<PeerConnectionManager> _logger;
 
-
-        private readonly Mixer _mixer;
-        private readonly Opusenc _opusenc = new Opusenc();
-        private readonly Opusdec _opudec = new Opusdec();
-
-        private int i = 0;
-        private readonly object _lock = new { };
+        private readonly Mixer _mixer = new();
 
         private ConcurrentDictionary<string, List<RTCIceCandidate>> _candidates = new();
         private ConcurrentDictionary<string, RTCPeerConnection> _peerConnections = new();
-
-        private string LastSentPktUser { get; set; }
 
         private static RTCConfiguration _config = new()
         {
@@ -59,7 +51,6 @@ namespace Signaler
             }
         };
 
-
         private static FFOptions options = new()
         {
             UseCache = true,
@@ -74,10 +65,10 @@ namespace Signaler
             _peerConnections ??= new ConcurrentDictionary<string, RTCPeerConnection>();
             _mixer = mixer;
 
-            //Task.Run(_mixer.StartAudioProcess);
+            Task.Run(_mixer.StartAudioProcess);
         }
 
-        public async Task<RTCSessionDescriptionInit> CreateServerOffer(string id)
+        public async Task<RTCSessionDescriptionInit> CreateServerOffer(User user)
         {
             var peerConnection = new RTCPeerConnection(_config);
 
@@ -97,7 +88,7 @@ namespace Signaler
                 if (peerConnection.signalingState == RTCSignalingState.have_local_offer ||
                     peerConnection.signalingState == RTCSignalingState.have_remote_offer)
                 {
-                    var candidates = _candidates.Where(x => x.Key == id).SingleOrDefault().Value;
+                    var candidates = _candidates.Where(x => x.Key == user.Id).SingleOrDefault().Value;
                     foreach (var candidate in candidates)
                     {
                         _webRTCHub.Clients.All.SendAsync("IceCandidateResult", candidate).GetAwaiter().GetResult();
@@ -110,9 +101,9 @@ namespace Signaler
                 if (peerConnection.signalingState == RTCSignalingState.have_local_offer ||
                     peerConnection.signalingState == RTCSignalingState.have_remote_offer)
                 {
-                    var candidatesList = _candidates.Where(x => x.Key == id).SingleOrDefault();
+                    var candidatesList = _candidates.Where(x => x.Key == user.Id).SingleOrDefault();
                     if (candidatesList.Value is null)
-                        _candidates.TryAdd(id, new List<RTCIceCandidate> { candidate });
+                        _candidates.TryAdd(user.Id, new List<RTCIceCandidate> { candidate });
                     else
                         candidatesList.Value.Add(candidate);
                 }
@@ -122,7 +113,7 @@ namespace Signaler
             {
                 if (state == RTCPeerConnectionState.closed || state == RTCPeerConnectionState.disconnected || state == RTCPeerConnectionState.failed)
                 {
-                    _peerConnections.TryRemove(id, out _);
+                    _peerConnections.TryRemove(user.Id, out _);
                 }
                 else if (state == RTCPeerConnectionState.connected)
                 {
@@ -132,81 +123,36 @@ namespace Signaler
 
             var offerSdp = peerConnection.createOffer(null);
             await peerConnection.setLocalDescription(offerSdp);
-            _peerConnections.TryAdd(id, peerConnection);
+            _peerConnections.TryAdd(user.Id, peerConnection);
+            _mixer.AddUsersToRelay(user);
             return offerSdp;
         }
 
-        void IPeerConnectionManager.SetAudioRelay(RTCPeerConnection peerConnection, User connectionId, IList<User> usersToRelay)
+        //void IPeerConnectionManager.SetAudioRelay(RTCPeerConnection peerConnection, User connectionId, IList<User> usersToRelay)
+        //{
+        //    SetAudioRelay(peerConnection, connectionId, usersToRelay);
+        //}
+
+        public void SetAudioRelay(User user, IList<User> usersToRelay)
         {
-            SetAudioRelay(peerConnection, connectionId, usersToRelay);
-        }
-
-        public static void SetAudioRelay(RTCPeerConnection peerConnection, User clientUser, IList<User> usersToRelay)
-        {
-            peerConnection.OnRtpPacketReceived += (rep, media, pkt) =>
+            user.PeerConnection.OnRtpPacketReceived += (rep, media, pkt) =>
             {
-                //peerConnection.
-                //RTPPacket rTPPacket = new RTPPacket(data.Length + num);
-                //var rtpChannel = peerConnection?.GetRtpChannel(media);
-                //RTCPSession rtcpSession = rt
-                //IPEndPoint iPEndPoint = (mediaType == SDPMediaTypesEnum.audio || m_isMediaMultiplexed) ? AudioDestinationEndPoint : VideoDestinationEndPoint;
-                //MediaStreamTrack mediaStreamTrack = (mediaType == SDPMediaTypesEnum.video) ? VideoLocalTrack : AudioLocalTrack;
-                //Queue<RTPPacket> packets = new();
-                //pktBytes.Enqueue(pkt.GetBytes());
-
-                foreach (var user in usersToRelay)
+                if (media == SDPMediaTypesEnum.audio)
                 {
-                    //if (user.Id == clientUser.Id)
-                    //{
-                    //    continue;
-                    //}
-                    user.PeerConnection?.SendRtpRaw(SDPMediaTypesEnum.audio, pkt.Payload, pkt.Header.Timestamp, pkt.Header.MarkerBit, pkt.Header.PayloadType);
-                    //user.PeerConnection?.SendAudio(pkt.Header.Timestamp, pkt.Payload);
-                    Console.WriteLine("Pacote enviado pelo usuário: " + user.Username + "com a peerconnection" + user.PeerConnection);
-
-                    //if (String.IsNullOrEmpty(LastSentPktUser))
-                    //{
-                    //    LastSentPktUser = user.Id;
-                    //    user.PeerConnection?.SendRtpRaw(SDPMediaTypesEnum.audio, pkt.Payload, pkt.Header.Timestamp, pkt.Header.MarkerBit, pkt.Header.PayloadType);
-                    //    Console.WriteLine("Primeiro envio foi do: " + user.Username + " com a peerconnection" + user.PeerConnection);
-                    //    continue;
-                    //}
-                    //if (user.Id == LastSentPktUser)
-                    //{
-                    //    Console.WriteLine($"{user.Username} deve esperar a sua vez de enviar. . .");
-                    //    continue;
-                    //}
-                    //if (user.Id != LastSentPktUser)
-                    //{
-                    //    LastSentPktUser = user.Id;
-                    //    user.PeerConnection?.SendRtpRaw(SDPMediaTypesEnum.audio, pkt.Payload, pkt.Header.Timestamp, pkt.Header.MarkerBit, pkt.Header.PayloadType);
-                    //    Console.WriteLine("Pacote enviado pelo usuário: " + user.Username + "com a peerconnection" + user.PeerConnection);
-                    //}
-                    //clientUser.PeerConnection?.SendRtpRaw(SDPMediaTypesEnum.audio, pkt.Payload, pkt.Header.Timestamp, pkt.Header.MarkerBit, pkt.Header.PayloadType);
-                }
-                //pkt.Payload = pktBytes.Dequeue();
-                //user.PeerConnection.SendAudio(pkt.Header.Timestamp, pkt.Payload);
-
-            };
-
-            peerConnection.OnReceiveReport += (report, media, pkt) =>
-            {
-                foreach (var user in usersToRelay)
-                {
-                    if (user.Id == clientUser.Id)
+                    var conns = _peerConnections.Where(p => p.Key != user.PeerConnection.SessionID).Select(s => s.Value);
+                    foreach (var pc in conns)
                     {
-                        continue;
+                        if (pc.localDescription.sdp.ToString() == user.PeerConnection.localDescription.sdp.ToString())
+                        {
+                            continue;
+                        }
+                        else
+                        {
+                            pc.SendRtpRaw(SDPMediaTypesEnum.audio, pkt.Payload, pkt.Header.Timestamp, pkt.Header.MarkerBit, pkt.Header.PayloadType);
+                        }
                     }
-
-                    user.PeerConnection?.SendRtcpFeedback(SDPMediaTypesEnum.audio, new RTCPFeedback(pkt.GetBytes()));
-                    Console.WriteLine($"Feedback - USER {user.Username}");
                 }
             };
-
-            //_mixer.HasAudioData += (object e, TesteEventArgs args) =>
-            //{
-            //    peerConnection.SendRtpRaw(SDPMediaTypesEnum.audio, args.bytes, args.Timestamp, 0, 0);
-            //};
         }
 
         public void SetRemoteDescription(string id, RTCSessionDescriptionInit rtcSessionDescriptionInit)
@@ -219,33 +165,6 @@ namespace Signaler
         {
             if (!_peerConnections.TryGetValue(id, out var pc)) return;
             pc.addIceCandidate(iceCandidate);
-        }
-
-        private RTPSession CreateRtpSession(List<SDPAudioVideoMediaFormat> audioFormats)
-        {
-            var rtpSession = new RTPSession(true, false, false, IPAddress.Loopback);
-            bool hasAudio = false;
-
-            if (audioFormats != null && audioFormats.Count > 0)
-            {
-                var audioTrack = new MediaStreamTrack(SDPMediaTypesEnum.audio, false, audioFormats, MediaStreamStatusEnum.SendRecv);
-                rtpSession.addTrack(audioTrack);
-                hasAudio = true;
-            }
-
-            var sdpOffer = rtpSession.CreateOffer(null);
-
-            // Because the SDP being written to the file is the input to ffplay the connection ports need to be changed
-            // to the ones ffplay will be listening on.
-            if (hasAudio)
-            {
-                sdpOffer.Media.Single(x => x.Media == SDPMediaTypesEnum.audio).Port = 8082;
-            }
-
-            rtpSession.Start();
-            rtpSession.SetDestination(SDPMediaTypesEnum.audio, new IPEndPoint(IPAddress.Loopback, 8082), new IPEndPoint(IPAddress.Loopback, 8083));
-
-            return rtpSession;
         }
 
         public RTCPeerConnection Get(string id)

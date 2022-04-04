@@ -6,9 +6,9 @@ namespace Signaler
     public interface IPeerConnectionManager
     {
         RTCPeerConnection Get(string id);
-        Task<RTCSessionDescriptionInit> CreateServerOffer(string id);
+        Task<RTCSessionDescriptionInit> CreateServerOffer(User user);
         void AddIceCandidate(string id, RTCIceCandidateInit iceCandidate);
         void SetRemoteDescription(string id, RTCSessionDescriptionInit rtcSessionDescriptionInit);
-        void SetAudioRelay(RTCPeerConnection peerConnection, User connectionId, IList<User> usersToRelay);
+        void SetAudioRelay(User connectionId, IList<User> usersToRelay);
     }
 }

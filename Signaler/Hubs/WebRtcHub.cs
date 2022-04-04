@@ -164,10 +164,10 @@ namespace Signaler.Hubs
             var user = _userManager.GetAll().Where(u => u.ConnectionId == Context.ConnectionId).Single();
             var room = _roomManager.GetAll().Where(r => r.Id == user.Room.Id).Single();
 
-            var offer = await _peerConnectionManager.CreateServerOffer(user.Id);
+            var offer = await _peerConnectionManager.CreateServerOffer(user);
             user.PeerConnection = _peerConnectionManager.Get(user.Id);
 
-            _peerConnectionManager.SetAudioRelay(user.PeerConnection, user, room.Users);
+            _peerConnectionManager.SetAudioRelay(user, room.Users);
             return offer;
         }
 

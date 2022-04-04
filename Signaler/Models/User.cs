@@ -33,7 +33,10 @@ namespace Signaler.Models
         /// <summary>
         ///     Indica se o usuario está em uma chamada
         /// </summary>
+        /// 
         public bool IsInCall { get; set; }
+
+        //public bool SendingPkt { get; set; }
 
         /// <summary>
         ///     A sala que o usuário está participando

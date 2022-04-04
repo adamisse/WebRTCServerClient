@@ -38,6 +38,8 @@ namespace Signaler
         private ConcurrentDictionary<string, List<RTCIceCandidate>> _candidates = new();
         private ConcurrentDictionary<string, RTCPeerConnection> _peerConnections = new();
 
+        private string LastSentPktUser { get; set; }
+
         private static RTCConfiguration _config = new()
         {
             X_UseRtpFeedbackProfile = true,
@@ -134,9 +136,13 @@ namespace Signaler
             return offerSdp;
         }
 
-        public void SetAudioRelay(RTCPeerConnection peerConnection, User clientUser, IList<User> usersToRelay)
+        void IPeerConnectionManager.SetAudioRelay(RTCPeerConnection peerConnection, User connectionId, IList<User> usersToRelay)
         {
+            SetAudioRelay(peerConnection, connectionId, usersToRelay);
+        }
 
+        public static void SetAudioRelay(RTCPeerConnection peerConnection, User clientUser, IList<User> usersToRelay)
+        {
             peerConnection.OnRtpPacketReceived += (rep, media, pkt) =>
             {
                 //peerConnection.
@@ -145,18 +151,42 @@ namespace Signaler
                 //RTCPSession rtcpSession = rt
                 //IPEndPoint iPEndPoint = (mediaType == SDPMediaTypesEnum.audio || m_isMediaMultiplexed) ? AudioDestinationEndPoint : VideoDestinationEndPoint;
                 //MediaStreamTrack mediaStreamTrack = (mediaType == SDPMediaTypesEnum.video) ? VideoLocalTrack : AudioLocalTrack;
+                //Queue<RTPPacket> packets = new();
+                //pktBytes.Enqueue(pkt.GetBytes());
 
                 foreach (var user in usersToRelay)
                 {
-                    if (user.Id == clientUser.Id)
-                    {
-                        continue;
-                    }
-
+                    //if (user.Id == clientUser.Id)
+                    //{
+                    //    continue;
+                    //}
                     user.PeerConnection?.SendRtpRaw(SDPMediaTypesEnum.audio, pkt.Payload, pkt.Header.Timestamp, pkt.Header.MarkerBit, pkt.Header.PayloadType);
+                    //user.PeerConnection?.SendAudio(pkt.Header.Timestamp, pkt.Payload);
                     Console.WriteLine("Pacote enviado pelo usuário: " + user.Username + "com a peerconnection" + user.PeerConnection);
+
+                    //if (String.IsNullOrEmpty(LastSentPktUser))
+                    //{
+                    //    LastSentPktUser = user.Id;
+                    //    user.PeerConnection?.SendRtpRaw(SDPMediaTypesEnum.audio, pkt.Payload, pkt.Header.Timestamp, pkt.Header.MarkerBit, pkt.Header.PayloadType);
+                    //    Console.WriteLine("Primeiro envio foi do: " + user.Username + " com a peerconnection" + user.PeerConnection);
+                    //    continue;
+                    //}
+                    //if (user.Id == LastSentPktUser)
+                    //{
+                    //    Console.WriteLine($"{user.Username} deve esperar a sua vez de enviar. . .");
+                    //    continue;
+                    //}
+                    //if (user.Id != LastSentPktUser)
+                    //{
+                    //    LastSentPktUser = user.Id;
+                    //    user.PeerConnection?.SendRtpRaw(SDPMediaTypesEnum.audio, pkt.Payload, pkt.Header.Timestamp, pkt.Header.MarkerBit, pkt.Header.PayloadType);
+                    //    Console.WriteLine("Pacote enviado pelo usuário: " + user.Username + "com a peerconnection" + user.PeerConnection);
+                    //}
+                    //clientUser.PeerConnection?.SendRtpRaw(SDPMediaTypesEnum.audio, pkt.Payload, pkt.Header.Timestamp, pkt.Header.MarkerBit, pkt.Header.PayloadType);
                 }
-                //}
+                //pkt.Payload = pktBytes.Dequeue();
+                //user.PeerConnection.SendAudio(pkt.Header.Timestamp, pkt.Payload);
+
             };
 
             peerConnection.OnReceiveReport += (report, media, pkt) =>

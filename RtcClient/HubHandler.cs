@@ -8,29 +8,32 @@ using Microsoft.Extensions.Logging;
 using SIPSorcery.Media;
 using SIPSorcery.Net;
 
-
 namespace asdfkjkjansv
 {
     public class RtcClientInitializer
     {
-        static async Task Main()
+        private static async Task Main()
         {
-            var hub = new HubHandler();
-            await hub.StartConnection();
+            var hub1 = new HubHandler();
+            await hub1.StartConnection();
 
-            await hub.CreateUser("user");
-            await hub.CreateRoom("teste");
-            await hub.JoinRoom("teste");
+            await hub1.CreateUser("user1");
+            await hub1.CreateRoom("teste");
+            await hub1.JoinRoom("teste", true);
+
+            //var hub2 = new HubHandler();
+            //await hub2.StartConnection();
+
+            //await hub2.CreateUser("user2");
+            //await hub2.JoinRoom("teste", false);
 
             while (true)
             {
                 await Task.Delay(int.MaxValue);
             }
 
-
             //criar a peerconnection passando as configs e a track
             //fazer o get offer do server
-
 
             //setar a answer passando a descrição remota
             //retornar a local peerconnection description passando a answer
@@ -38,7 +41,6 @@ namespace asdfkjkjansv
             //offer e answer setadas -> basta trafegar os dados
         }
     }
-
 
     public class HubHandler : Hub
     {
@@ -61,7 +63,6 @@ namespace asdfkjkjansv
                     credentialType = RTCIceCredentialType.password,
                     urls = "turn:turn.anyfirewall.com:443?transport=tcp"
                 },
-
             }
         };
 
@@ -119,42 +120,11 @@ namespace asdfkjkjansv
             }
         }
 
-
-        //pc.addTrack(audioTrack);
-
-        //pc.OnAudioFormatsNegotiated += (audioFormats) => audioSource.SetAudioSourceFormat(audioFormats.First());
-
-        //pc.onconnectionstatechange += async (state) =>
-        //{
-        //    logger.LogDebug($"Peer connection state change to {state}.");
-
-        //    if (state == RTCPeerConnectionState.connected)
-        //    {
-        //        await audioSource.StartAudio();
-        //    }
-        //    else if (state == RTCPeerConnectionState.failed)
-        //    {
-        //        pc.Close("ice disconnection");
-        //    }
-        //    else if (state == RTCPeerConnectionState.closed)
-        //    {
-        //        await audioSource.CloseAudio();
-        //    }
-        //};
-
-        //pc.OnReceiveReport += (re, media, rr) => logger.LogDebug($"RTCP Receive for {media} from {re}\n{rr.GetDebugSummary()}");
-        //     pc.OnSendReport += (media, sr) => logger.LogDebug($"RTCP Send for {media}\n{sr.GetDebugSummary()}");
-        //     pc.GetRtpChannel().OnStunMessageReceived += (msg, ep, isRelay) => logger.LogDebug($"STUN {msg.Header.MessageType} received from {ep}.");
-        //     pc.oniceconnectionstatechange += (state) => logger.LogDebug($"ICE connection state change to {state}.");
-
-        //     return Task.FromResult(pc);
-
-        public async Task<RTCPeerConnection> CreateRTCPeerConnection()
+        public async Task<RTCPeerConnection> CreateRTCPeerConnection(bool isMusic)
         {
             var pc = new RTCPeerConnection(_Config);
 
-            var audioSamplePath = @"C:\temp\result.raw";
-            var audioSource = new AudioExtrasSource(new AudioEncoder(), new AudioSourceOptions { AudioSource = AudioSourcesEnum.Music, MusicFile = audioSamplePath });
+            var audioSource = new AudioExtrasSource(new AudioEncoder(), new AudioSourceOptions { AudioSource = isMusic ? AudioSourcesEnum.Music : AudioSourcesEnum.WhiteNoise/*, MusicFile = audioSamplePath*/ });
             MediaStreamTrack audioTrack = new MediaStreamTrack(audioSource.GetAudioSourceFormats(), MediaStreamStatusEnum.SendRecv);
             pc.addTrack(audioTrack);
             audioSource.OnAudioSourceEncodedSample += pc.SendAudio;
@@ -190,11 +160,11 @@ namespace asdfkjkjansv
             return pc;
         }
 
-        public async Task JoinRoom(string roomId)
+        public async Task JoinRoom(string roomId, bool isMusic)
         {
             try
             {
-                PeerConnection = await CreateRTCPeerConnection();
+                PeerConnection = await CreateRTCPeerConnection(isMusic);
                 Console.WriteLine("PeerConnection" + PeerConnection + "created");//talvez retornar um valor no método acima assim como o server faz?
 
                 //RegisterRTCEventHandlers();
@@ -220,7 +190,6 @@ namespace asdfkjkjansv
                 var serverOffer = await HubConnection.InvokeAsync<RTCSessionDescriptionInit>("GetServerOffer");
                 Console.WriteLine("gettingServerOffer: ");// + serverOffer.sdp);
                 await SetAnswer(serverOffer);
-
             }
             catch (Exception ex)
             {
@@ -247,113 +216,10 @@ namespace asdfkjkjansv
                 //{
                 //    PeerConnection?.SendRtpRaw(SDPMediaTypesEnum.audio, pkt.Payload, pkt.Header.Timestamp, pkt.Header.MarkerBit, pkt.Header.PayloadType);
                 //}
-
             }
             catch (Exception ex)
             {
                 throw new Exception("Error", ex);
-            }
-        }
-
-        public void SubscribeForHubEvents()
-        {
-            //HubConnection.On("UpdateRoom") => {
-
-            //}
-        }
-
-        public void RegisterRTCEventHandlers()//IceEventHandlers
-        {
-
-
-            //PeerConnection.addTrack(audioTrack); //ONDE ENFIAR ESSA LINHA ?
-
-            //PeerConnection.OnAudioFormatsNegotiated += (formats) => audioSource.SetAudioSourceFormat(formats.First());
-
-            //PeerConnection.onicegatheringstatechange += (obj) =>
-            //{
-            //    Console.WriteLine("OnIceGathering: ");
-            //    if (PeerConnection.iceGatheringState == RTCIceGatheringState.complete)
-            //    {
-            //        Console.WriteLine("IceGatherin Complete: ");
-            //        foreach (var candidate in IceCandidates)
-            //        {
-            //            AddIceCandidate(candidate);
-            //        }
-            //    }
-            //};
-
-            //PeerConnection.oniceconnectionstatechange += (RTCIceConnectionState conn) =>
-            //{
-            //    Console.WriteLine("oniceconnectionstatechange");
-            //    Console.WriteLine("ICE Status: " + PeerConnection.iceConnectionState);
-
-            //    if (PeerConnection.connectionState == RTCPeerConnectionState.connected)
-            //    {
-            //        Console.WriteLine("Peerconnection: connected");
-            //        if (IceCandidates.Length > 0)
-            //        {
-            //            foreach (var candidate in IceCandidates)
-            //            {
-            //                Console.WriteLine("Adding ICE Candidate" + candidate);
-            //                AddIceCandidate(candidate);
-            //            }
-
-            //            //Array.Clear(IceCandidates, 0, IceCandidates.Length);
-            //        }
-            //    }
-            //};
-
-            //PeerConnection.onicecandidate += async (candidate) =>
-            //{
-            //    Console.WriteLine("OnIceCandidate");
-            //    if (PeerConnection.signalingState == RTCSignalingState.have_local_offer ||
-            //        PeerConnection.signalingState == RTCSignalingState.have_remote_offer)
-            //    {
-            //        await HubConnection.InvokeAsync<RTCSessionDescriptionInit>("AddIceCandidate", candidate);
-            //    }
-            //};
-
-            //PeerConnection.OnRtpPacketReceived += (rep, media, pkt) =>
-            //{
-            //    while (pkt != null)
-            //    {
-            //        PeerConnection?.SendRtpRaw(SDPMediaTypesEnum.audio, pkt.Payload, pkt.Header.Timestamp, pkt.Header.MarkerBit, pkt.Header.PayloadType);
-            //        Console.WriteLine("Package Sended");
-            //    }
-            //};
-
-            //PeerConnection.onconnectionstatechange += async (state) =>
-            //{
-            //    Console.WriteLine($"Peer connection state change to {state}.");
-
-            //    if (state == RTCPeerConnectionState.connected)
-            //    {
-            //        await audioSource.StartAudio();
-            //    }
-            //    else if (state == RTCPeerConnectionState.failed)
-            //    {
-            //        PeerConnection.Close("ice disconnection");
-            //    }
-            //    else if (state == RTCPeerConnectionState.closed)
-            //    {
-            //        await audioSource.CloseAudio();
-            //    }
-            //};
-
-        }
-
-        public void AddIceCandidate(RTCIceCandidateInit candidate)
-        {
-            try
-            {
-                if (candidate.candidate is null) return;
-                Console.WriteLine("ICE Candidate" + candidate.candidate + "was added succefully");
-                PeerConnection.addIceCandidate(candidate);
-            }
-            catch
-            {
-                throw new Exception("Erro ao adicionar ice candidate");
             }
         }
     }

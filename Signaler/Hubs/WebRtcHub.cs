@@ -44,15 +44,19 @@ namespace Signaler.Hubs
         /// </summary>
         public override Task OnDisconnectedAsync(Exception exception)
         {
-            var user = _userManager.GetAll().Where(u => u.ConnectionId == Context.ConnectionId).Single();
-            var room = _roomManager.GetAll().Where(r => r.Id == user.Room.Id).Single();
-            room.RemoveUser(user);
-            user.Room = null;
-            _userManager.Delete(user.Id);
-            _logger.LogInformation("Conexão no Hub RTC finalizada! {0} | {1}", Context.ConnectionId, exception?.ToString() ?? string.Empty);
+            var user = _userManager.GetAll().Where(u => u.ConnectionId == Context.ConnectionId).SingleOrDefault();
+            var room = _roomManager.GetAll().Where(r => r.Id == user.Room.Id).SingleOrDefault();
 
-            NotifyUpdateUsers().GetAwaiter().GetResult();
-            NotifyRoomUpdates().GetAwaiter().GetResult();
+            if (user != null && room != null)
+            {
+                room.RemoveUser(user);
+                user.Room = null;
+                _userManager.Delete(user.Id);
+                _logger.LogInformation("Conexão no Hub RTC finalizada! {0} | {1}", Context.ConnectionId, exception?.ToString() ?? string.Empty);
+
+                NotifyUpdateUsers().GetAwaiter().GetResult();
+                NotifyRoomUpdates().GetAwaiter().GetResult();
+            }
 
             return base.OnDisconnectedAsync(exception);
         }

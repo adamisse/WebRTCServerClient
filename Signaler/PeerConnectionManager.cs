@@ -14,14 +14,14 @@ namespace Signaler
        Instantiate the RTCPeerConnection instance,
        Add the audio and/or video tracks as required,
        Call the createOffer method to acquire an SDP offer that can be sent to the remote peer,
-      
-    
+
        Send the SDP offer and get the SDP answer from the remote peer (this exchange is not part of the WebRTC specification and can be done using any signalling layer, examples are SIP, web sockets etc),
        Once the SDP exchange has occurred the ICE checks can start in order to establish the optimal network path between the two peers. ICE candidates typically need to be passed between peers using the signalling layer,
        Once ICE has established a the DTLS handshake will occur,,
        If the DTLS handshake is successful the keying material it produces is used to initialise the SRTP contexts,
        After the SRTP contexts are initialised the RTP media and RTCP packets can be exchanged in the normal manner.
      */
+
     public class PeerConnectionManager : IPeerConnectionManager
     {
         private readonly IHubContext<WebRTCHub> _webRTCHub;
@@ -121,6 +121,8 @@ namespace Signaler
                 }
             };
 
+            GenerateRtcLogs(peerConnection, user);
+
             var offerSdp = peerConnection.createOffer(null);
             await peerConnection.setLocalDescription(offerSdp);
             _peerConnections.TryAdd(user.Id, peerConnection);
@@ -128,10 +130,17 @@ namespace Signaler
             return offerSdp;
         }
 
-        //void IPeerConnectionManager.SetAudioRelay(RTCPeerConnection peerConnection, User connectionId, IList<User> usersToRelay)
-        //{
-        //    SetAudioRelay(peerConnection, connectionId, usersToRelay);
-        //}
+        public void GenerateRtcLogs(RTCPeerConnection pc, User user)
+        {
+            pc.OnReceiveReport += (re, media, rr) =>
+            {
+                Console.WriteLine($"{user.Username}: RTCP Receive for {media} from {re}\n{rr.GetDebugSummary()}");
+            };
+
+            pc.OnSendReport += (media, sr) => Console.WriteLine($"{user.Username}: RTCP Send for {media}\n{sr.GetDebugSummary()}");
+            pc.GetRtpChannel().OnStunMessageReceived += (msg, ep, isRelay) => Console.WriteLine($"{user.Username}: STUN {msg.Header.MessageType} received from {ep}.");
+            pc.oniceconnectionstatechange += (state) => Console.WriteLine($"{user.Username}: ICE connection state change to {state}.");
+        }
 
         public void SetAudioRelay(User user, IList<User> usersToRelay)
         {
@@ -188,80 +197,3 @@ namespace Signaler
         }
     }
 }
-
-
-
-
-//_opudec.DecodeRawAudio(pkt.Payload);
-//_opusenc.EncodeRawAudioPacket(pkt.Payload);
-
-//    //var encoder = OpusEncoder.Create(48000, 1, Concentus.Enums.OpusApplication.OPUS_APPLICATION_VOIP);
-//    //encoder.EnableAnalysis = true;
-//    //encoder.Bitrate = (64 * 1024);
-//    //encoder.Complexity = 5;
-//    //encoder.PacketLossPercent = 0;
-//    //encoder.UseInbandFEC = true;
-//    //encoder.UseVBR = false;
-//    //encoder.UseConstrainedVBR = false;
-
-//    //var outStream = new MemoryStream();
-//    //var oggin = new OpusOggWriteStream(encoder, outStream);
-//    //lock(_lock)
-//    //{
-//    //    var audioStream = new MemoryStream(pkt.Payload, 28, pkt.Payload.Length - 28, true, true);
-//    //    using var fl = File.Create(@$"C:\temp\{i}.opus");
-//    //    fl.Write(audioStream.GetBuffer(), 0, (int)audioStream.Length);
-//    //    fl.Close();
-//    //    i++;
-//    //}
-
-//    //var outStream = new MemoryStream();
-//    //var mediaAnalisys = FFProbe.Analyse(audioStream, int.MaxValue, options);
-//    //audioStream.Position = 0;
-
-//    //FFMpegArguments
-//    //    .FromPipeInput(new StreamPipeSource(audioStream), options =>
-//    //    {
-//    //        //options.WithAudioCodec("OPUS");
-//    //        //options.WithDuration(mediaAnalisys.Duration);
-//    //    })
-//    //    //.AddPipeInput(new StreamPipeSource(audioStream2), options =>
-//    //    //{
-//    //    //    options.WithDuration(durationAudio2);
-//    //    //})
-//    //    .OutputToPipe(new StreamPipeSink(outStream), options =>
-//    //    {
-//    //        options.ForceFormat("mp3");
-//    //        //options.WithCustomArgument(@"-filter_complex amerge=inputs=2 -ac 2");
-//    //    })
-//    //    .NotifyOnOutput((str, dt) =>
-//    //    {
-//    //        _logger.LogInformation(str);
-//    //    })
-//    //    .ProcessSynchronously(true, options);
-
-//    //using (var fileIn = new MemoryStream(pkt.Payload))
-//    //using (var pcmStream = new MemoryStream())
-//    //{
-//    //var decoder = opusdecoder.create(48000, 1);
-//    //var oggin = new opusoggreadstream(decoder, filein);
-
-//    //    while (oggIn.HasNextPacket)
-//    //    {
-//    //        short[] packet = oggIn.DecodeNextPacket();
-//    //        if (packet != null)
-//    //        {
-//    //            for (int i = 0; i < packet.Length; i++)
-//    //            {
-//    //                var bytes = BitConverter.GetBytes(packet[i]);
-//    //                pcmStream.Write(bytes, 0, bytes.Length);
-//    //            }
-//    //        }
-//    //    }
-
-//    //    pcmStream.Position = 0;
-
-//    //    var wavStream = new RawSourceWaveStream(pcmStream, new WaveFormat(48000, 1));
-//    //    var sampleProvider = wavStream.ToSampleProvider();
-//    //    WaveFileWriter.CreateWaveFile16(Path.Combine(Directory.GetCurrentDirectory(), "AAAAAAAAAAAAAA.wav"), sampleProvider);
-//    //}

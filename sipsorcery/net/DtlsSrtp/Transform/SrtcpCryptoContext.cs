@@ -55,11 +55,14 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 */
 
+using System;
+using System.Diagnostics;
 using System.IO;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Digests;
 using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Macs;
+using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Utilities;
 
@@ -106,7 +109,7 @@ namespace SIPSorcery.Net
         /**
          * The HMAC object we used to do packet authentication
          */
-        private IMac mac;             // used for various HMAC computations
+        private IMac mac; // used for various HMAC computations
 
         // The symmetric cipher engines we need here
         private IBlockCipher cipher = null;
@@ -114,6 +117,11 @@ namespace SIPSorcery.Net
 
         // implements the counter cipher mode for RTP according to RFC 3711
         private SrtpCipherCTR cipherCtr = new SrtpCipherCTR();
+
+        /**
+         * Secondary cipher for decrypting packets in auth-only mode.
+         */
+        private GcmBlockCipher gcmEngine = new GcmBlockCipher(new AesFastEngine());
 
         // Here some fields that a allocated here or in constructor. The methods
         // use these fields to avoid too many new operations
@@ -193,6 +201,13 @@ namespace SIPSorcery.Net
                     saltKey = new byte[this.policy.SaltKeyLength];
                     break;
 
+                case SrtpPolicy.AESGCM_ENCRYPTION:
+                    cipher = new AesEngine();
+                    gcmEngine = new GcmBlockCipher(cipher);
+                    encKey = new byte[policy.EncKeyLength];
+                    saltKey = new byte[policy.SaltKeyLength];
+                    break;
+
                 case SrtpPolicy.TWOFISHF8_ENCRYPTION:
                     cipherF8 = new TwofishEngine();
                     cipher = new TwofishEngine();
@@ -269,6 +284,7 @@ namespace SIPSorcery.Net
             {
                 return mki.Length;
             }
+
             return 0;
         }
 
@@ -309,6 +325,13 @@ namespace SIPSorcery.Net
                 encrypt = true;
             }
 
+            // Encrypt the packet using Gailos Counter Mode encryption
+            if (policy.EncType == SrtpPolicy.AESGCM_ENCRYPTION)
+            {
+                ProcessPacketAESGCM(pkt, sentIndex, true, false);
+                encrypt = true;
+            }
+
             // Encrypt the packet using F8 Mode encryption
             else if (policy.EncType == SrtpPolicy.AESF8_ENCRYPTION || policy.EncType == SrtpPolicy.TWOFISHF8_ENCRYPTION)
             {
@@ -331,8 +354,9 @@ namespace SIPSorcery.Net
                 pkt.Append(rbStore, 4);
                 pkt.Append(tagStore, policy.AuthTagLength);
             }
+
             sentIndex++;
-            sentIndex &= (int)(~0x80000000);       // clear possible overflow
+            sentIndex &= (int)(~0x80000000); // clear possible overflow
         }
 
         /**
@@ -405,13 +429,24 @@ namespace SIPSorcery.Net
                 {
                     ProcessPacketAESCM(pkt, index);
                 }
-
+                /* Decrypt the packet using Gailos Counter Mode encryption */
+                else if (policy.EncType == SrtpPolicy.AESGCM_ENCRYPTION)
+                {
+                    pkt.shrink(4); /* Index is processed separately as part of AAD. */
+                    ProcessPacketAESGCM(pkt, index, false, false);
+                }
                 /* Decrypt the packet using F8 Mode encryption */
-                else if (policy.EncType == SrtpPolicy.AESF8_ENCRYPTION || policy.EncType == SrtpPolicy.TWOFISHF8_ENCRYPTION)
+                else if (policy.EncType == SrtpPolicy.AESF8_ENCRYPTION ||
+                         policy.EncType == SrtpPolicy.TWOFISHF8_ENCRYPTION)
                 {
                     ProcessPacketAESF8(pkt, index);
                 }
             }
+            else if (policy.EncType == SrtpPolicy.AESGCM_ENCRYPTION)
+            {
+                ProcessPacketAESGCM(pkt, index, true, false);
+            }
+
             Update(index);
             return true;
         }
@@ -458,6 +493,184 @@ namespace SIPSorcery.Net
             int payloadOffset = 8;
             int payloadLength = pkt.GetLength() - payloadOffset;
             cipherCtr.Process(cipher, pkt.GetBuffer(), payloadOffset, payloadLength, ivStore);
+        }
+
+        private void ProcessPacketAESGCM(RawPacket pkt, int index, bool authenticationOnly, bool encrypting)
+        {
+            long ssrc = pkt.GetSSRC();
+
+            /* Compute the SRTCP GCM IV (refer to section 9.1 in RFC 7714):
+             *
+             *         0  1  2  3  4  5  6  7  8  9 10 11
+             *       +--+--+--+--+--+--+--+--+--+--+--+--+
+             *       |00|00|    SSRC   |00|00|0+SRTCP Idx|---+
+             *       +--+--+--+--+--+--+--+--+--+--+--+--+   |
+             *                                               |
+             *       +--+--+--+--+--+--+--+--+--+--+--+--+   |
+             *       |         Encryption Salt           |->(+)
+             *       +--+--+--+--+--+--+--+--+--+--+--+--+   |
+             *                                               |
+             *       +--+--+--+--+--+--+--+--+--+--+--+--+   |
+             *       |       Initialization Vector       |<--+
+             *       +--+--+--+--+--+--+--+--+--+--+--+--+
+             */
+
+            ivStore[0] = saltKey[0];
+            ivStore[1] = saltKey[1];
+
+            // The shifts transform the ssrc and index into network order
+            ivStore[2] = (byte)(((ssrc >> 24) & 0xff) ^ saltKey[2]);
+            ivStore[3] = (byte)(((ssrc >> 16) & 0xff) ^ saltKey[3]);
+            ivStore[4] = (byte)(((ssrc >> 8) & 0xff) ^ saltKey[4]);
+            ivStore[5] = (byte)((ssrc & 0xff) ^ saltKey[5]);
+
+            ivStore[6] = saltKey[6];
+            ivStore[7] = saltKey[7];
+
+            ivStore[8] = (byte)(((index >> 24) & 0xff) ^ saltKey[8]);
+            ivStore[9] = (byte)(((index >> 16) & 0xff) ^ saltKey[9]);
+            ivStore[10] = (byte)(((index >> 8) & 0xff) ^ saltKey[10]);
+            ivStore[11] = (byte)((index & 0xff) ^ saltKey[11]);
+
+            try
+            {
+                var aead = new AeadParameters(new KeyParameter(masterKey), 128, ivStore);
+                gcmEngine.Init(encrypting, aead);
+
+                if (!authenticationOnly)
+                {
+                    // Mark the SRTCP packet as encrypted
+                    index = (int)(index | 0x80000000);
+
+                    // Encrypted part excludes fixed header (8 bytes)
+                    int payloadOffset = 8;
+
+                    gcmEngine.ProcessAadBytes(pkt.GetBuffer().GetBuffer(), 0, payloadOffset);
+                    writeRoc(index);
+                    gcmEngine.ProcessAadBytes(rbStore, 0, 4);
+
+                    MemoryStream buf = pkt.GetBuffer();
+
+                    int processLen = gcmEngine.GetUnderlyingCipher().ProcessBlock(buf.GetBuffer(), payloadOffset,
+                        buf.GetBuffer(), pkt.GetLength() - payloadOffset);
+
+                    Console.WriteLine(buf.ToString());
+                }
+                else
+                {
+                    int bufferedTagLen = encrypting ? 0 : policy.AuthTagLength;
+                    int aadLen = pkt.GetLength() - bufferedTagLen;
+                    if (aadLen < 0)
+                    {
+                        Console.WriteLine("A vaca foi pro brejo");
+                        Debugger.Break();
+                    }
+
+                    gcmEngine.ProcessAadBytes(pkt.GetBuffer().GetBuffer(), 8, aadLen);
+                    writeRoc(index);
+                    gcmEngine.ProcessAadBytes(rbStore, 0, 4);
+
+                    int processLen = gcmEngine.DoFinal(pkt.GetBuffer().GetBuffer(), aadLen);
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("A vaca foi pro brejo");
+                Debugger.Break();
+            }
+        }
+        //{ 
+
+        //    long ssrc = pkt.GetSSRC();
+        //    /* Compute the SRTCP GCM IV (refer to section 9.1 in RFC 7714):
+        //     *
+        //     *         0  1  2  3  4  5  6  7  8  9 10 11
+        //     *       +--+--+--+--+--+--+--+--+--+--+--+--+
+        //     *       |00|00|    SSRC   |00|00|0+SRTCP Idx|---+
+        //     *       +--+--+--+--+--+--+--+--+--+--+--+--+   |
+        //     *                                               |
+        //     *       +--+--+--+--+--+--+--+--+--+--+--+--+   |
+        //     *       |         Encryption Salt           |->(+)
+        //     *       +--+--+--+--+--+--+--+--+--+--+--+--+   |
+        //     *                                               |
+        //     *       +--+--+--+--+--+--+--+--+--+--+--+--+   |
+        //     *       |       Initialization Vector       |<--+
+        //     *       +--+--+--+--+--+--+--+--+--+--+--+--+
+        //     */
+
+        //    ivStore[0] = saltKey[0];
+        //    ivStore[1] = saltKey[1];
+
+        //    // The shifts transform the ssrc and index into network order
+        //    ivStore[2] = (byte)(((ssrc >> 24) & 0xff) ^ saltKey[2]);
+        //    ivStore[3] = (byte)(((ssrc >> 16) & 0xff) ^ saltKey[3]);
+        //    ivStore[4] = (byte)(((ssrc >> 8) & 0xff) ^ saltKey[4]);
+        //    ivStore[5] = (byte)((ssrc & 0xff) ^ saltKey[5]);
+
+        //    ivStore[6] = saltKey[6];
+        //    ivStore[7] = saltKey[7];
+
+        //    ivStore[8] = (byte)(((index >> 24) & 0xff) ^ saltKey[8]);
+        //    ivStore[9] = (byte)(((index >> 16) & 0xff) ^ saltKey[9]);
+        //    ivStore[10] = (byte)(((index >> 8) & 0xff) ^ saltKey[10]);
+        //    ivStore[11] = (byte)((index & 0xff) ^ saltKey[11]);
+
+        //    try
+        //    {
+        //        var aead = new AeadParameters(new KeyParameter(masterKey), 256, ivStore);
+        //        cipher.Init(encrypting, aead);
+        //        gcmEngine.Init(false, aead);
+
+        //        if (!authenticationOnly)
+        //        {
+        //            // Mark the SRTCP packet as encrypted
+        //            index = (int)(index | 0x80000000);
+
+        //            // Encrypted part excludes fixed header (8 bytes)
+        //            int payloadOffset = 8;
+
+
+        //            gcmEngine.ProcessAadBytes(pkt.GetBuffer(), pkt.getOffset(), payloadOffset);
+        //            writeRoc(index);
+        //            gcmEngine.ProcessAadBytes(rbStore, 0, 4);
+
+        //            int processLen = cipher.ProcessBlock(pkt.GetBuffer(), pkt.getOffset() + payloadOffset, pkt.GetLength() - payloadOffset);
+
+        //            pkt.setLength(processLen + payloadOffset);
+        //        }
+        //        else
+        //        {
+        //            int bufferedTagLen = encrypting ? 0 : policy.AuthTagLength;
+        //            int aadLen = pkt.GetLength() - bufferedTagLen;
+        //            if (aadLen < 0)
+        //            {
+        //                Console.WriteLine("A vaca foi pro brejo");
+        //                Debugger.Break();
+        //            }
+        //            cipher.processAAD(pkt.GetBuffer(), pkt.getOffset(), aadLen);
+        //            writeRoc(index);
+        //            cipher.processAAD(rbStore, 0, 4);
+
+        //            int processLen = cipher.process(pkt.GetBuffer(), aadLen, bufferedTagLen);
+
+        //            pkt.setLength(aadLen + processLen);
+        //        }
+        //    }
+        //    catch (GeneralSecurityException e)
+        //    {
+        //        Console.WriteLine(e.ToString());
+        //    }
+        //}
+
+        /**
+         * Writes roc / index to the rbStore buffer.
+         */
+        protected void writeRoc(int rocIn)
+        {
+            rbStore[0] = (byte)(rocIn >> 24);
+            rbStore[1] = (byte)(rocIn >> 16);
+            rbStore[2] = (byte)(rocIn >> 8);
+            rbStore[3] = (byte)rocIn;
         }
 
         /**
@@ -581,6 +794,7 @@ namespace SIPSorcery.Net
             {
                 ivStore[i] = masterSalt[i];
             }
+
             ivStore[7] ^= label;
             ivStore[14] = ivStore[15] = 0;
         }
@@ -597,7 +811,7 @@ namespace SIPSorcery.Net
 
             KeyParameter encryptionKey = new KeyParameter(masterKey);
             cipher.Init(true, encryptionKey);
-            Arrays.Fill(masterKey, (byte)0);
+            //Arrays.Fill(masterKey, (byte)0);
 
             cipherCtr.GetCipherStream(cipher, encKey, policy.EncKeyLength, ivStore);
 
@@ -617,8 +831,9 @@ namespace SIPSorcery.Net
                     default:
                         break;
                 }
+
+                Arrays.Fill(authKey, (byte)0);
             }
-            Arrays.Fill(authKey, (byte)0);
 
             // compute the session salt
             label = 5;
@@ -631,6 +846,7 @@ namespace SIPSorcery.Net
             {
                 SrtpCipherF8.DeriveForIV(cipherF8, encKey, saltKey);
             }
+
             encryptionKey = new KeyParameter(encKey);
             cipher.Init(true, encryptionKey);
             Arrays.Fill(encKey, (byte)0);
@@ -684,7 +900,7 @@ namespace SIPSorcery.Net
         {
             SrtcpCryptoContext pcc = null;
             pcc = new SrtcpCryptoContext(ssrc, masterKey,
-                    masterSalt, policy);
+                masterSalt, policy);
             return pcc;
         }
     }

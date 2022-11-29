@@ -80,13 +80,17 @@
  * @author Bing SU (nova.su@gmail.com)
  */
 
+using System;
+using System.Diagnostics;
 using System.IO;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Digests;
 using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Macs;
+using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Utilities;
+using SIPSorcery.net.DtlsSrtp.Transform;
 
 namespace SIPSorcery.Net
 {
@@ -188,6 +192,13 @@ namespace SIPSorcery.Net
         private SrtpCipherCTR cipherCtr = new SrtpCipherCTR();
 
         /**
+         * Secondary cipher for decrypting packets in auth-only mode.
+         */
+        protected SrtpCipherGcm cipherAuthOnly = new SrtpCipherGcm();
+
+        private GcmBlockCipher gcmEngine = null;
+
+        /**
          * Temp store.
          */
         private byte[] tagStore;
@@ -258,9 +269,8 @@ namespace SIPSorcery.Net
          *            SRTP policy for this SRTP cryptographic context, defined the
          *            encryption algorithm, the authentication algorithm, etc
          */
-
         public SrtpCryptoContext(long ssrcIn, int rocIn, long kdr, byte[] masterK,
-                byte[] masterS, SrtpPolicy policyIn)
+            byte[] masterS, SrtpPolicy policyIn)
         {
             ssrcCtx = ssrcIn;
             mki = null;
@@ -299,6 +309,14 @@ namespace SIPSorcery.Net
                     cipher = new AesEngine();
                     encKey = new byte[policy.EncKeyLength];
                     saltKey = new byte[policy.SaltKeyLength];
+                    break;
+
+                case SrtpPolicy.AESGCM_ENCRYPTION:
+                    cipher = new AesEngine();
+                    encKey = new byte[policy.EncKeyLength];
+                    saltKey = new byte[policy.SaltKeyLength];
+                    cipherAuthOnly = new SrtpCipherGcm();
+                    gcmEngine = new GcmBlockCipher(cipher);
                     break;
 
                 case SrtpPolicy.TWOFISHF8_ENCRYPTION:
@@ -427,6 +445,11 @@ namespace SIPSorcery.Net
             {
                 ProcessPacketAESCM(pkt);
             }
+            else if (policy.EncType == SrtpPolicy.AESGCM_ENCRYPTION)
+            {
+                /* Encrypt the packet using Gailos Counter Mode encryption */
+                ProcessPacketAESGCM(pkt, true);
+            }
             else if (policy.EncType == SrtpPolicy.AESF8_ENCRYPTION || policy.EncType == SrtpPolicy.TWOFISHF8_ENCRYPTION)
             {
                 /* Encrypt the packet using F8 Mode encryption */
@@ -517,6 +540,11 @@ namespace SIPSorcery.Net
                     ProcessPacketAESCM(pkt);
                     break;
 
+                case SrtpPolicy.AESGCM_ENCRYPTION:
+                    // using Gailos Counter Mode encryption
+                    ProcessPacketAESGCM(pkt, false);
+                    break;
+
                 case SrtpPolicy.AESF8_ENCRYPTION:
                 case SrtpPolicy.TWOFISHF8_ENCRYPTION:
                     // using F8 Mode encryption
@@ -526,6 +554,7 @@ namespace SIPSorcery.Net
                 default:
                     return false;
             }
+
             Update(seqNo, guessedIndex);
             return true;
         }
@@ -568,8 +597,49 @@ namespace SIPSorcery.Net
             cipherCtr.Process(cipher, pkt.GetBuffer(), payloadOffset, payloadLength, ivStore);
         }
 
-        /**
-         * Perform F8 Mode AES encryption / decryption
+        private void ProcessPacketAESGCM(RawPacket pkt, bool encrypting)
+        {
+            long ssrc = pkt.GetSSRC();
+            int seqNo = pkt.GetSequenceNumber();
+#pragma warning disable CS0675 // Bitwise-or operator used on a sign-extended operand
+            long index = ((long)roc << 16) | seqNo;
+#pragma warning restore CS0675 // Bitwise-or operator used on a sign-extended operand
+
+            // compute the SRTP GCM IV (refer to section 8.1 in RFC 7714):
+
+            ivStore[0] = saltKey[0];
+            ivStore[1] = saltKey[1];
+
+            int i;
+
+            for (i = 2; i < 6; i++)
+            {
+                ivStore[i] = (byte)((0xFF & (ssrc >> ((5 - i) * 8))) ^ saltKey[i]);
+            }
+
+            for (i = 6; i < 12; i++)
+            {
+                ivStore[i] = (byte)((0xFF & (byte)(index >> ((11 - i) * 8))) ^ saltKey[i]);
+            }
+
+            int rtpHeaderLength = pkt.GetHeaderLength();
+
+            try
+            {
+                var aead = new ParametersWithIV(new KeyParameter(masterKey), ivStore);
+                gcmEngine.Init(encrypting, aead);
+
+                gcmEngine.ProcessAadBytes(pkt.GetBuffer().GetBuffer(), 0, rtpHeaderLength);
+                gcmEngine.GetUnderlyingCipher().ProcessBlock(pkt.GetBuffer().GetBuffer(), rtpHeaderLength,
+                    pkt.GetBuffer().GetBuffer(), pkt.GetLength() - rtpHeaderLength);
+            }
+            catch (Exception e)
+            {
+                Debugger.Break();
+            }
+        }
+
+        /*
          * 
          * @param pkt
          *            the RTP packet to be encrypted / decrypted
@@ -694,14 +764,17 @@ namespace SIPSorcery.Net
             {
                 key_id = ((label << 48) | (index / keyDerivationRate));
             }
+
             for (int i = 0; i < 7; i++)
             {
                 ivStore[i] = masterSalt[i];
             }
+
             for (int i = 7; i < 14; i++)
             {
                 ivStore[i] = (byte)((byte)(0xFF & (key_id >> (8 * (13 - i)))) ^ masterSalt[i]);
             }
+
             ivStore[14] = ivStore[15] = 0;
         }
 
@@ -740,8 +813,9 @@ namespace SIPSorcery.Net
                     default:
                         break;
                 }
+
+                Arrays.Fill(authKey, (byte)0);
             }
-            Arrays.Fill(authKey, (byte)0);
 
             // compute the session salt
             label = 0x02;
@@ -754,6 +828,7 @@ namespace SIPSorcery.Net
             {
                 SrtpCipherF8.DeriveForIV(cipherF8, encKey, saltKey);
             }
+
             encryptionKey = new KeyParameter(encKey);
             cipher.Init(true, encryptionKey);
             Arrays.Fill(encKey, (byte)0);
@@ -831,6 +906,7 @@ namespace SIPSorcery.Net
             {
                 seqNum = seqNo & 0xffff;
             }
+
             if (this.guessedROC > this.roc)
             {
                 roc = guessedROC;

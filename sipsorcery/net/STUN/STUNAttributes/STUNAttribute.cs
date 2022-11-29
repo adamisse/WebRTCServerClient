@@ -32,7 +32,7 @@
 //
 //
 //
-// License: 
+// License:
 // BSD 3-Clause "New" or "Revised" License, see included LICENSE.md file.
 //-----------------------------------------------------------------------------
 
@@ -73,6 +73,7 @@ namespace SIPSorcery.Net
 
         // New attributes defined in TURN (RFC5766).
         ChannelNumber = 0x000C,
+
         Lifetime = 0x000D,
         XORPeerAddress = 0x0012,
         Data = 0x0013,
@@ -196,7 +197,7 @@ namespace SIPSorcery.Net
 
                     attributes.Add(attribute);
 
-                    // Attributes start on 32 bit word boundaries so where an attribute length is not a multiple of 4 it gets padded. 
+                    // Attributes start on 32 bit word boundaries so where an attribute length is not a multiple of 4 it gets padded.
                     int padding = (stunAttributeLength % 4 != 0) ? 4 - (stunAttributeLength % 4) : 0;
 
                     startAttIndex = startAttIndex + 4 + stunAttributeLength + padding;
@@ -249,7 +250,7 @@ namespace SIPSorcery.Net
             return STUNAttribute.STUNATTRIBUTE_HEADER_LENGTH + PaddedLength;
         }
 
-        public new virtual string ToString()
+        public virtual new string ToString()
         {
             string attrDescrString = "STUN Attribute: " + AttributeType.ToString() + ", length=" + PaddedLength + ".";
 

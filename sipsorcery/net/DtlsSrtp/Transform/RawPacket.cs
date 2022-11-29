@@ -192,7 +192,7 @@ namespace SIPSorcery.Net
          */
         public int GetHeaderLength()
         {
-            int length = FIXED_HEADER_SIZE + 4 * GetCsrcCount();
+            int length = FIXED_HEADER_SIZE + (GetCsrcCount() * 4);
             if (GetExtensionBit())
             {
                 length += EXT_HEADER_SIZE + GetExtensionLength();

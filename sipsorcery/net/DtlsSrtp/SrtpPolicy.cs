@@ -47,6 +47,7 @@ namespace SIPSorcery.Net
         public const int TWOFISH_ENCRYPTION = 3;
         public const int AESF8_ENCRYPTION = 2;
         public const int TWOFISHF8_ENCRYPTION = 4;
+        public const int AESGCM_ENCRYPTION = 5;
         public const int NULL_AUTHENTICATION = 0;
         public const int HMACSHA1_AUTHENTICATION = 1;
         public const int SKEIN_AUTHENTICATION = 2;

@@ -73,14 +73,23 @@ namespace SIPSorcery.Net
     public interface IDtlsSrtpPeer
     {
         event Action<AlertLevelsEnum, AlertTypesEnum, string> OnAlert;
+
         bool ForceUseExtendedMasterSecret { get; set; }
+
         SrtpPolicy GetSrtpPolicy();
+
         SrtpPolicy GetSrtcpPolicy();
+
         byte[] GetSrtpMasterServerKey();
+
         byte[] GetSrtpMasterServerSalt();
+
         byte[] GetSrtpMasterClientKey();
+
         byte[] GetSrtpMasterClientSalt();
+
         bool IsClient();
+
         Certificate GetRemoteCertificate();
     }
 
@@ -88,8 +97,8 @@ namespace SIPSorcery.Net
     {
         private static readonly ILogger logger = Log.Logger;
 
-        Certificate mCertificateChain = null;
-        AsymmetricKeyParameter mPrivateKey = null;
+        private Certificate mCertificateChain = null;
+        private AsymmetricKeyParameter mPrivateKey = null;
 
         private RTCDtlsFingerprint mFingerPrint;
 
@@ -105,13 +114,15 @@ namespace SIPSorcery.Net
 
         // Asymmetric shared keys derived from the DTLS handshake and used for the SRTP encryption/
         private byte[] srtpMasterClientKey;
+
         private byte[] srtpMasterServerKey;
         private byte[] srtpMasterClientSalt;
         private byte[] srtpMasterServerSalt;
-        byte[] masterSecret = null;
+        private byte[] masterSecret = null;
 
         // Policies
         private SrtpPolicy srtpPolicy;
+
         private SrtpPolicy srtcpPolicy;
 
         private int[] cipherSuites;
@@ -275,21 +286,22 @@ namespace SIPSorcery.Net
             base.ProcessClientExtensions(clientExtensions);
 
             // set to some reasonable default value
-            int chosenProfile = SrtpProtectionProfile.SRTP_AES128_CM_HMAC_SHA1_80;
+            int chosenProfile = SrtpProtectionProfile.SRTP_AEAD_AES_256_GCM;
             UseSrtpData clientSrtpData = TlsSRTPUtils.GetUseSrtpExtension(clientExtensions);
 
-            foreach (int profile in clientSrtpData.ProtectionProfiles)
-            {
-                switch (profile)
-                {
-                    case SrtpProtectionProfile.SRTP_AES128_CM_HMAC_SHA1_32:
-                    case SrtpProtectionProfile.SRTP_AES128_CM_HMAC_SHA1_80:
-                    case SrtpProtectionProfile.SRTP_NULL_HMAC_SHA1_32:
-                    case SrtpProtectionProfile.SRTP_NULL_HMAC_SHA1_80:
-                        chosenProfile = profile;
-                        break;
-                }
-            }
+            //foreach (int profile in clientSrtpData.ProtectionProfiles)
+            //{
+            //    switch (profile)
+            //    {
+            //        //case SrtpProtectionProfile.SRTP_AES128_CM_HMAC_SHA1_32:
+            //        //case SrtpProtectionProfile.SRTP_AES128_CM_HMAC_SHA1_80:
+            //        //case SrtpProtectionProfile.SRTP_NULL_HMAC_SHA1_32:
+            //        //case SrtpProtectionProfile.SRTP_NULL_HMAC_SHA1_80:
+            //        case SrtpProtectionProfile.SRTP_AEAD_AES_256_GCM:
+            //            chosenProfile = profile;
+            //            break;
+            //    }
+            //}
 
             // server chooses a mutually supported SRTP protection profile
             // http://tools.ietf.org/html/draft-ietf-avt-dtls-srtp-07#section-4.1.2
@@ -404,11 +416,11 @@ namespace SIPSorcery.Net
             byte[] sharedSecret = GetKeyingMaterial(2 * (keyLen + saltLen));
 
             /*
-             * 
+             *
              * See: http://tools.ietf.org/html/rfc5764#section-4.2
-             * 
+             *
              * sharedSecret is an equivalent of :
-             * 
+             *
              * struct {
              *     client_write_SRTP_master_key[SRTPSecurityParams.master_key_len];
              *     server_write_SRTP_master_key[SRTPSecurityParams.master_key_len];
@@ -417,14 +429,14 @@ namespace SIPSorcery.Net
              *  } ;
              *
              * Here, client = local configuration, server = remote.
-             * NOTE [ivelin]: 'local' makes sense if this code is used from a DTLS SRTP client. 
-             *                Here we run as a server, so 'local' referring to the client is actually confusing. 
-             * 
+             * NOTE [ivelin]: 'local' makes sense if this code is used from a DTLS SRTP client.
+             *                Here we run as a server, so 'local' referring to the client is actually confusing.
+             *
              * l(k) = KEY length
              * s(k) = salt length
-             * 
+             *
              * So we have the following repartition :
-             *                           l(k)                                 2*l(k)+s(k)   
+             *                           l(k)                                 2*l(k)+s(k)
              *                                                   2*l(k)                       2*(l(k)+s(k))
              * +------------------------+------------------------+---------------+-------------------+
              * + local key           |    remote key    | local salt   | remote salt   |

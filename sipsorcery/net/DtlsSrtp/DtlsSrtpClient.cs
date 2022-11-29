@@ -140,8 +140,8 @@ namespace SIPSorcery.Net
             if (clientSrtpData == null)
             {
                 SecureRandom random = new SecureRandom();
-                int[] protectionProfiles = { SrtpProtectionProfile.SRTP_AES128_CM_HMAC_SHA1_80 };
-                byte[] mki = new byte[(SrtpParameters.SRTP_AES128_CM_HMAC_SHA1_80.GetCipherKeyLength() + SrtpParameters.SRTP_AES128_CM_HMAC_SHA1_80.GetCipherSaltLength()) / 8];
+                int[] protectionProfiles = { SrtpProtectionProfile.SRTP_AEAD_AES_256_GCM };
+                byte[] mki = new byte[(SrtpParameters.SRTP_AEAD_AES_256_GCM.GetCipherKeyLength() + SrtpParameters.SRTP_AEAD_AES_256_GCM.GetCipherSaltLength()) / 8];
                 random.NextBytes(mki); // Reusing our secure random for generating the key.
                 this.clientSrtpData = new UseSrtpData(protectionProfiles, mki);
             }
@@ -181,17 +181,18 @@ namespace SIPSorcery.Net
             base.ProcessServerExtensions(clientExtensions);
 
             // set to some reasonable default value
-            int chosenProfile = SrtpProtectionProfile.SRTP_AES128_CM_HMAC_SHA1_80;
+            int chosenProfile = SrtpProtectionProfile.SRTP_AEAD_AES_256_GCM;
             UseSrtpData clientSrtpData = TlsSRTPUtils.GetUseSrtpExtension(clientExtensions);
 
             foreach (int profile in clientSrtpData.ProtectionProfiles)
             {
                 switch (profile)
                 {
-                    case SrtpProtectionProfile.SRTP_AES128_CM_HMAC_SHA1_32:
-                    case SrtpProtectionProfile.SRTP_AES128_CM_HMAC_SHA1_80:
-                    case SrtpProtectionProfile.SRTP_NULL_HMAC_SHA1_32:
-                    case SrtpProtectionProfile.SRTP_NULL_HMAC_SHA1_80:
+                    //case SrtpProtectionProfile.SRTP_AES128_CM_HMAC_SHA1_32:
+                    //case SrtpProtectionProfile.SRTP_AES128_CM_HMAC_SHA1_80:
+                    //case SrtpProtectionProfile.SRTP_NULL_HMAC_SHA1_32:
+                    //case SrtpProtectionProfile.SRTP_NULL_HMAC_SHA1_80:
+                    case SrtpProtectionProfile.SRTP_AEAD_AES_256_GCM:
                         chosenProfile = profile;
                         break;
                 }

@@ -375,6 +375,12 @@ namespace SIPSorcery.SIP.App
         public event SIPTransactionTraceMessageDelegate OnTransactionTraceMessage;
 
         /// <summary>
+        /// Determines whether the agent will operate with support for reliable provisional responses as per RFC3262.
+        /// If support is not desired it should be set to false before the initial INVITE request is sent.
+        /// </summary>
+        public bool PrackSupported { get; set; } = true;
+
+        /// <summary>
         /// Creates a new instance where the user agent has exclusive control of the SIP transport.
         /// This is significant for incoming requests. WIth exclusive control the agent knows that
         /// any request are for it and can handle accordingly. If the transport needs to be shared 
@@ -493,6 +499,7 @@ namespace SIPSorcery.SIP.App
             m_callDescriptor = sipCallDescriptor;
 
             m_uac = new SIPClientUserAgent(m_transport, m_outboundProxy);
+            m_uac.PrackSupported = PrackSupported;
             m_uac.CallTrying += ClientCallTryingHandler;
             m_uac.CallRinging += ClientCallRingingHandler;
             m_uac.CallAnswered += ClientCallAnsweredHandler;
@@ -509,7 +516,17 @@ namespace SIPSorcery.SIP.App
 
                 var sdpAnnounceAddress = mediaSession.RtpBindAddress ?? NetServices.GetLocalAddressForRemote(serverEndPoint.Address);
 
-                var sdp = mediaSession.CreateOffer(sdpAnnounceAddress);
+                SDP sdp = null;
+
+                if (!string.IsNullOrEmpty(sipCallDescriptor.Content))
+                {
+                    sdp = SDP.ParseSDPDescription(sipCallDescriptor.Content);
+                }
+                else
+                {
+                    sdp = mediaSession.CreateOffer(sdpAnnounceAddress);
+                }
+
                 if (sdp == null)
                 {
                     ClientCallFailed?.Invoke(m_uac, $"Could not generate an offer.", null);
@@ -1496,25 +1513,43 @@ namespace SIPSorcery.SIP.App
         /// <param name="sipResponse">The INVITE ringing response.</param>
         private async void ClientCallRingingHandler(ISIPClientUserAgent uac, SIPResponse sipResponse)
         {
-            if (sipResponse.Status == SIPResponseStatusCodesEnum.SessionProgress &&
-                sipResponse.Body != null)
+            try
             {
-                var setDescriptionResult = MediaSession.SetRemoteDescription(SdpType.answer, SDP.ParseSDPDescription(sipResponse.Body));
-                logger.LogDebug($"Set remote description for early media result {setDescriptionResult}.");
-
-                if (setDescriptionResult == SetDescriptionResultEnum.OK)
+                if (sipResponse.Status == SIPResponseStatusCodesEnum.SessionProgress &&
+                    sipResponse.Body != null)
                 {
-                    await MediaSession.Start().ConfigureAwait(false);
+                    var setDescriptionResult = MediaSession.SetRemoteDescription(SdpType.answer, SDP.ParseSDPDescription(sipResponse.Body));
+                    logger.LogDebug($"Set remote description for early media result {setDescriptionResult}.");
+
+                    if (setDescriptionResult == SetDescriptionResultEnum.OK)
+                    {
+                        await MediaSession.Start()
+                                          .ConfigureAwait(false);
+                    }
+                }
+
+                if (ClientCallRinging != null)
+                {
+                    ClientCallRinging(uac, sipResponse);
+                }
+                else
+                {
+                    logger.LogInformation(
+                        $"Call attempt to {uac.CallDescriptor.Uri} received a ringing response {sipResponse.ShortDescription}.");
                 }
             }
+            catch (Exception ex)
+            {
+                logger.Log(LogLevel.Error, ex, "ClientCallRingingHandler failed, call will be cancelled.");
 
-            if (ClientCallRinging != null)
-            {
-                ClientCallRinging(uac, sipResponse);
-            }
-            else
-            {
-                logger.LogInformation($"Call attempt to {uac.CallDescriptor.Uri} received a ringing response {sipResponse.ShortDescription}.");
+                try
+                {
+                    Cancel();
+                }
+                catch
+                {
+                    logger.Log(LogLevel.Error, ex, "ClientCallRingingHandler call could not be cancelled.");
+                }
             }
         }
 
@@ -1562,7 +1597,18 @@ namespace SIPSorcery.SIP.App
 
                     if (setDescriptionResult == SetDescriptionResultEnum.OK)
                     {
-                        await MediaSession.Start().ConfigureAwait(false);
+                        try
+                        {
+                            await MediaSession.Start()
+                                              .ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            var errorDescription = "error occurred whilst starting the MediaSession";
+                            logger.Log(LogLevel.Error, ex, errorDescription);
+                            HandleErrorDuringAnswer(setDescriptionResult, errorDescription);
+                            return;
+                        }
 
                         m_sipDialogue = uac.SIPDialogue;
                         m_sipDialogue.DialogueState = SIPDialogueStateEnum.Confirmed;
@@ -1573,10 +1619,7 @@ namespace SIPSorcery.SIP.App
                     }
                     else
                     {
-                        logger.LogWarning($"Call attempt was answered with {sipResponse.ShortDescription} but an {setDescriptionResult} error occurred setting the remote description.");
-                        ClientCallFailed?.Invoke(uac, $"Failed to set the remote description {setDescriptionResult}", sipResponse);
-                        uac.SIPDialogue?.Hangup(this.m_transport, this.m_outboundProxy);
-                        CallEnded(sipResponse.Header.CallId);
+                        HandleErrorDuringAnswer(setDescriptionResult, "error occurred setting the remote description");
                     }
                 }
             }
@@ -1584,6 +1627,16 @@ namespace SIPSorcery.SIP.App
             {
                 logger.LogWarning($"Call attempt was answered with failure response {sipResponse.ShortDescription}.");
                 ClientCallFailed?.Invoke(uac, sipResponse.ReasonPhrase, sipResponse);
+                CallEnded(sipResponse.Header.CallId);
+            }
+
+            void HandleErrorDuringAnswer(SetDescriptionResultEnum setDescriptionResult, string errorText)
+            {
+                var errorMessage = $"Call attempt was answered with {sipResponse.ShortDescription} ({setDescriptionResult}) but an {errorText}.";
+                logger.LogWarning(errorMessage);
+
+                ClientCallFailed?.Invoke(uac, errorMessage, sipResponse);
+                uac.SIPDialogue?.Hangup(this.m_transport, this.m_outboundProxy);
                 CallEnded(sipResponse.Header.CallId);
             }
         }
@@ -1805,7 +1858,7 @@ namespace SIPSorcery.SIP.App
         /// <param name="mediaType">The media type, aduio or video, that timed out.</param>
         private void OnRtpTimeout(SDPMediaTypesEnum mediaType)
         {
-            logger.LogWarning($"RTP has timed out for media {mediaType}, hanging up call.");
+            logger.LogWarning($"RTP has timed out for media {mediaType} hanging up call.");
 
             Hangup();
         }
